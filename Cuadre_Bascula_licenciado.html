@@ -994,6 +994,7 @@ const ViewDash = {
       <div class="fit"><button class="b-pri" onclick="imagenCuadre()">📸 Imagen del cuadre al momento</button></div>
       <div class="fit"><button class="b-ghost" onclick="exportExcel(ViewDash.data())">⬇️ Excel</button></div>
     </div></div>
+    <div class="card" style="border:2px solid ${COL.i}"><div id="dInv"></div></div>
     <div class="kpis" id="dK"></div>
     <div class="card"><h2>⚖️ ¿Están las 3 áreas a la par?</h2><div class="hint" style="margin-bottom:8px">Entradas del periodo afectadas por cada área.</div><div class="steps" id="dSteps"></div></div>
     <div class="card"><h2>📊 Cuadre por producto</h2><div class="legend"><span><i style="background:${COL.b}"></i>Báscula</span><span><i style="background:${COL.c}"></i>Factura (Compras)</span><span><i style="background:${COL.i}"></i>Inventarios</span></div><div class="tw" id="dPiv" style="max-height:none"></div></div>
@@ -1044,6 +1045,7 @@ const ViewDash = {
       <td class="n ${p!=null&&Math.abs(p)>CFG().tolerancia?'dif-bad':''}">${r.cb?fmt(d,2):'—'}</td><td class="n ${p!=null&&Math.abs(p)>CFG().tolerancia?'dif-bad':''}">${fmtPct(p)}</td><td class="n">${fmt(r.i,2)}</td><td class="n ${Math.abs(fi)>1e-6&&r.pi===0?'dif-bad':''}">${r.pi?'<small>en proceso</small>':fmt(fi,2)}</td>
       <td class="n">${r.pc||''}</td><td class="n">${r.pi||''}</td><td class="n">${r.pq||''}</td><td class="n">${r.ok}</td></tr>`; }).join('')}</tbody>
       <tfoot><tr><td colspan="2">Total</td><td class="n">${T0.n}</td><td colspan="6"></td><td class="n">${T0.pc}</td><td class="n">${T0.pi}</td><td class="n">${T0.pq}</td><td class="n">${T0.ok}</td></tr></tfoot></table>`:'<div class="empty">Sin entradas en este periodo.</div>';
+    const ae=document.activeElement; if(!(ae&&ae.closest&&ae.closest('#dInv'))) this.renderInv(L);
     this.charts(L,R);
     const A=alertasLocales(L);
     $('#dAl').innerHTML=A.length?A.sort((a,b)=>(a.lvl==='bad'?0:1)-(b.lvl==='bad'?0:1)).map(a=>`<div class="obs" style="border-color:${a.lvl==='bad'?'var(--bad)':'#e0a100'};cursor:pointer" onclick="detalle('${a.e.id}')"><b>${a.lvl==='bad'?'🔴':'🟠'} ${esc(a.e.folio)} · ${esc(nombreProd(a.e))}</b><br>${esc(a.t)}</div>`).join(''):'<div class="hint">✅ Sin alertas.</div>';
@@ -1066,6 +1068,49 @@ const ViewDash = {
     const days=Object.keys(byDay).sort();
     mkChart('chC',{type:'bar',data:{labels:days.map(d=>d.slice(8)+'/'+d.slice(5,7)),datasets:[{label:'Llegadas',data:days.map(d=>byDay[d]),backgroundColor:COL.b,borderRadius:4,maxBarThickness:18}]},
       options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{beginAtZero:true,ticks:{precision:0},grid:{color:COL.grid},border:{display:false}}}}});
+  },
+  renderInv(L){
+    const el=$('#dInv'); if(!el) return;
+    const per=this.per, canOdoo=per!=='*'&&(ME.rol==='master'||ME.rol==='inventarios');
+    const OD=(per!=='*'&&T().odoo&&T().odoo[per])||{};
+    const keyOf=e=>(e.bas&&e.bas.productoId)||('nc_'+String((e.bas&&e.bas.productoTexto)||'x').replace(/[.#$\[\]\/\s]+/g,'_').slice(0,60));
+    const g={};
+    L.forEach(e=>{ const k=keyOf(e), p=prod(e.bas&&e.bas.productoId);
+      const r=g[k]=g[k]||{k,clave:p&&p.clave||'',nombre:p?p.nombre:((e.bas&&e.bas.productoTexto)||'(sin producto)')+' ⚠',u:unidadDe(e),nb:0,b:0,nc:0,c:0,ni:0,i:0,pq:0,rq:0};
+      r.nb++; r.b+=qB(e)||0;
+      if(e.com){ r.nc++; r.c+=qC(e)||0; }
+      if(e.inv){ r.ni++; r.i+=qI(e)||0; if(!e.cal) r.pq++; else if(e.cal.estado==='rechazado') r.rq++; } });
+    const rows=Object.values(g).sort((a,b)=>(a.clave||'~'+a.nombre).localeCompare(b.clave||'~'+b.nombre));
+    const f2=n=>Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const tot=rows.reduce((t,r)=>{['nb','b','nc','c','ni','i'].forEach(k=>t[k]+=r[k]); return t;},{nb:0,b:0,nc:0,c:0,ni:0,i:0});
+    const odV=r=>OD[r.k]?num(OD[r.k].cant):null;
+    const hasOd=rows.some(r=>odV(r)!=null); const parcial=hasOd&&rows.some(r=>odV(r)==null&&r.ni>0); const parTxt=parcial?' <span class="pill p-warn">captura parcial</span>':''; const totOd=rows.reduce((s,r)=>s+(odV(r)||0),0);
+    const difTxt=(a,b)=>{ if(b==null) return '<span class="hint">—</span>'; const d=a-b; return Math.abs(d)<0.005?'<span class="pill p-ok">✅ Cuadra</span>':`<span class="dif-bad">${d>0?'+':''}${f2(d)}</span>`; };
+    const perTxt=per==='*'?'Todos los periodos':pLabel(per).toLowerCase();
+    el.innerHTML=`<div class="row" style="align-items:flex-start"><div><h2 style="font-size:18px">📦 Entró a inventario · ${perTxt} (${tot.ni})</h2>
+      <div class="hint">Mismo formato que Odoo: <b>[clave] producto (número de entradas)</b> y cantidad. Total sumado igual que Odoo (todas las unidades).${tot.ni<tot.nb?' Quedan <b>'+(tot.nb-tot.ni)+'</b> entradas de báscula sin afectar en inventario.':''}</div></div>
+      <div class="fit" style="text-align:right"><div class="hint" style="text-transform:uppercase;font-weight:700">Total inventario</div><div style="font-size:34px;font-weight:800;color:#0e7a52;font-variant-numeric:tabular-nums">${f2(tot.i)}</div>
+      ${hasOd?`<div class="hint">Odoo: <b>${f2(totOd)}</b> · Dif.: ${difTxt(tot.i,totOd)}</div>`:''}</div></div>
+    <div class="kpis" style="margin:12px 0 10px">
+      <div class="kpi"><div class="l">⚖️ Báscula (${tot.nb})</div><div class="v">${f2(tot.b)}</div><div class="s">registrado al llegar</div></div>
+      <div class="kpi"><div class="l">🧾 Compras · factura (${tot.nc})</div><div class="v">${f2(tot.c)}</div><div class="s">lo que se paga</div></div>
+      <div class="kpi" style="border:2px solid ${COL.i};background:#e9f8f1"><div class="l">📦 Inventarios (${tot.ni})</div><div class="v" style="color:#0e7a52">${f2(tot.i)}</div><div class="s">lo que entró a inventario</div></div>
+      ${per!=='*'?`<div class="kpi ${hasOd&&Math.abs(tot.i-totOd)>=0.005?'alert':hasOd?'good':''}"><div class="l">🟣 Odoo</div><div class="v">${hasOd?f2(totOd):'—'}</div><div class="s">${hasOd?'Dif. inventario vs Odoo: '+difTxt(tot.i,totOd)+parTxt:'captura las cifras de Odoo abajo'}</div></div>`:''}
+    </div>
+    ${rows.length?`<div class="tw" style="max-height:none"><table style="font-size:14px"><thead><tr><th>Producto</th><th class="n">⚖️ Báscula</th><th class="n">🧾 Compras</th><th class="n" style="background:#e9f8f1;color:#0e7a52">📦 Inventarios</th>${per!=='*'?'<th class="n">🟣 Odoo</th><th class="n">Inv. − Odoo</th>':''}</tr></thead><tbody>
+      ${rows.map(r=>`<tr><td><b>${r.clave?'['+esc(r.clave)+'] ':''}${esc(r.nombre.toUpperCase())}</b> (${r.ni})<div class="hint">${esc(r.u)}${r.ni<r.nb?' · '+(r.nb-r.ni)+' sin afectar':''}${r.pq?' · '+r.pq+' calidad pend.':''}${r.rq?' · '+r.rq+' rechazada(s)':''}</div></td>
+        <td class="n">${f2(r.b)}<div class="hint">(${r.nb})</div></td><td class="n">${f2(r.c)}<div class="hint">(${r.nc})</div></td>
+        <td class="n" style="background:#f2fbf7;font-size:16px;font-weight:800;color:#0e7a52">${f2(r.i)}</td>
+        ${per!=='*'?`<td class="n">${canOdoo?`<input data-odoo="${r.k}" inputmode="decimal" style="width:130px;text-align:right" value="${odV(r)==null?'':odV(r)}" placeholder="Cifra Odoo">`:(odV(r)==null?'—':f2(odV(r)))}</td><td class="n">${difTxt(r.i,odV(r))}</td>`:''}</tr>`).join('')}</tbody>
+      <tfoot><tr style="font-size:16px"><td>TOTAL ${perTxt.toUpperCase()} (${tot.ni})</td><td class="n">${f2(tot.b)}</td><td class="n">${f2(tot.c)}</td><td class="n" style="font-size:19px;color:#0e7a52">${f2(tot.i)}</td>${per!=='*'?`<td class="n">${hasOd?f2(totOd):'—'}</td><td class="n">${hasOd?difTxt(tot.i,totOd)+parTxt:''}</td>`:''}</tr></tfoot></table></div>`:'<div class="empty">Sin entradas en este periodo.</div>'}
+    ${canOdoo&&rows.length?'<p class="hint" style="margin-top:8px">Escribe la cantidad que muestra Odoo para cada producto y presiona Enter o cambia de casilla; se guarda para el periodo y queda registro de quién la capturó.</p>':''}`;
+    $$('#dInv [data-odoo]').forEach(inp=>{
+      const save=async()=>{ const k=inp.dataset.odoo, v=num(inp.value), cur=OD[k]?num(OD[k].cant):null; if(v===cur) return;
+        if(v==null) await DB.remove('odoo/'+per+'/'+k); else await DB.set('odoo/'+per+'/'+k,{cant:v,usuario:ME.nombre,ts:Date.now()}); };
+      inp.addEventListener('change',save);
+      inp.addEventListener('keydown',ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); inp.blur(); } });
+      inp.addEventListener('blur',()=>setTimeout(()=>{ if(!(document.activeElement&&document.activeElement.closest('#dInv'))) ViewDash.renderInv(ViewDash.data()); },300));
+    });
   },
   renderMes(){
     const el=$('#dMes'); if(!el) return; const m=$('#dM').value;
@@ -1091,6 +1136,7 @@ async function imagenCuadre(){
   rep.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #0d2a47;padding-bottom:10px;margin-bottom:14px">
       <div><div style="font-size:24px;font-weight:800;color:#0d2a47">Reporte de cuadre de báscula · ${per}</div><div style="color:#5f6f82">${esc(CFG().empresa)}${V.cat?' · '+esc(V.cat):''}</div></div>
       <div style="text-align:right;color:#5f6f82;font-size:13px">Generado: <b>${fDT(Date.now())}</b><br>Por: ${esc(ME.nombre)} (${ROLES[ME.rol].label})<br>Estado del periodo: ${estadoCierre}</div></div>
+    <div style="border:2px solid #1baf7a;border-radius:12px;padding:14px;margin-bottom:14px">${$('#dInv').innerHTML.replace(/<input[^>]*value="([^"]*)"[^>]*>/g,(m,v)=>v?Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—').replace(/<p class="hint"[^>]*>Escribe[\s\S]*?<\/p>/,'')}</div>
     <div class="kpis">${$('#dK').innerHTML}</div>
     <div class="steps" style="margin-bottom:14px">${$('#dSteps').innerHTML}</div>
     <div style="font-weight:800;margin:6px 0">Cuadre por producto</div>${$('#dPiv').innerHTML}
