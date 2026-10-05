@@ -668,7 +668,7 @@ function formCompras(id){
   const e=entradasAll().find(x=>x.id===id); const b=e.bas;
   openModal(`<h2>🧾 Factura · ${esc(e.folio)}</h2>
   <p class="hint">Báscula registró <b>${fmt(qB(e),3)} ${unidadDe(e)}</b> (${fmt(b.neto)} kg neto) de <b>${esc(nombreProd(e))}</b> · ${esc(b.proveedor)} · folio pesaje ${esc(b.folioPesaje)} · ${fDT(e.ts)}</p>
-  ${!prod(b.productoId)?`<div class="sec" style="background:var(--warnbg)">⚠️ Báscula lo registró como <b>no catalogado</b>: “${esc(b.productoTexto)}”. Asigna el producto (puedes darlo de alta y quedará pendiente de autorización del master).
+  ${!prod(b.productoId)?`<div class="sec" style="background:var(--warnbg)">⚠️ Báscula lo registró como <b>no catalogado</b>: “${esc(b.productoTexto)}”. Asigna el producto o dalo de alta (quedará registrado en la bitácora del catálogo).
      <div class="row"><div><select id="cProd" onchange="calcDifC('${id}')">${prodOptions('')}</select></div><div class="fit"><button class="b-sm" onclick="formProducto(null,'${id}')">➕ Nuevo producto</button></div></div></div>`:''}
   <div class="row"><div><label class="req">Número de factura</label><input id="cFact"></div><div><label>Proveedor según factura</label><input id="cProv" value="${esc(b.proveedor)}"></div></div>
   <div class="row"><div><label class="req">Cantidad a pagar según factura (<span id="cU">${unidadDe(e)}</span>)</label><input id="cCant" inputmode="decimal" oninput="calcDifC('${id}')"></div><div><label>Importe total factura ($, opcional)</label><input id="cImp" inputmode="decimal"></div></div>
@@ -794,24 +794,28 @@ const ViewProd = {
     el.innerHTML=`<div class="card"><div class="row">
       <div><label>Buscar producto</label><input id="pQ" value="${esc(this.q)}" placeholder="Clave, nombre o categoría"></div>
       ${M||C?`<div class="fit"><button class="b-pri" onclick="formProducto()">➕ Nuevo producto</button></div>`:''}
-      ${M?`<div class="fit"><button onclick="$('#xlsIn').click()">📥 Cargar catálogo desde Excel</button><input type="file" id="xlsIn" accept=".xlsx,.xls,.csv" style="display:none" onchange="leerExcel(this.files[0])"></div>
+      ${M||C?`<div class="fit"><button onclick="$('#xlsIn').click()">📥 Cargar catálogo desde Excel</button><input type="file" id="xlsIn" accept=".xlsx,.xls,.csv" style="display:none" onchange="leerExcel(this.files[0])"></div>
            <div class="fit"><button class="b-ghost" onclick="plantillaExcel()">⬇️ Plantilla</button></div>`:''}
     </div>
-    <p class="hint" style="margin-top:8px">${C?'Los productos que des de alta quedan <b>pendientes de autorización del master</b>; mientras tanto se pueden usar y se marcan con ⏳.':M?'Excel: columnas <b>Clave, Nombre, Categoría, Unidad, Factor kg</b> (el factor solo aplica cuando la unidad no es kg, ej. litros de combustible = densidad kg/L). Si la clave ya existe, se actualiza.':'Catálogo de materiales que pueden llegar a báscula.'}</p></div>
-    <div class="card" style="padding:0"><div class="tw" id="prodTbl"></div></div>`;
+    <p class="hint" style="margin-top:8px">${M||C?'Las altas, cambios y cargas de catálogo quedan registradas en la <b>bitácora</b> con usuario, fecha y hora. Excel: columnas <b>Clave, Nombre, Categoría, Unidad, Factor kg</b> (el factor solo aplica cuando la unidad no es kg, ej. litros de combustible = densidad kg/L). Si la clave ya existe, se actualiza.':'Catálogo de materiales que pueden llegar a báscula.'}</p></div>
+    <div class="card" style="padding:0"><div class="tw" id="prodTbl"></div></div>
+    ${M||C?`<div class="card"><h2>📝 Bitácora del catálogo</h2><p class="hint">Registro de quién dio de alta, modificó o cargó productos.</p><div class="tw" id="prodLog" style="max-height:360px"></div></div>`:''}`;
     $('#pQ').oninput=e=>{this.q=e.target.value;this.update();};
   },
   update(){
-    const el=$('#prodTbl'); if(!el) return; const M=ME.rol==='master';
+    const el=$('#prodTbl'); if(!el) return; const M=ME.rol==='master', C=ME.rol==='compras';
+    const lg=$('#prodLog');
+    if(lg){ const Lg=Object.values(T().catalogoLog||{}).sort((a,b)=>b.ts-a.ts).slice(0,300);
+      lg.innerHTML=Lg.length?`<table><thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr></thead><tbody>${Lg.map(l=>`<tr><td>${fDT(l.ts)}</td><td>${ROLES[l.rol]?ROLES[l.rol].ic:''} ${esc(l.usuario)}</td><td><b>${esc(l.accion)}</b></td><td>${esc(l.detalle)}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">Sin movimientos registrados.</div>'; }
     const q=this.q.toLowerCase();
     const P=productos().filter(p=>!q||[p.clave,p.nombre,p.categoria].join(' ').toLowerCase().includes(q))
       .sort((a,b)=>(a.estado==='pendiente'?0:1)-(b.estado==='pendiente'?0:1));
     if(!P.length){ el.innerHTML='<div class="empty">Sin productos. '+(M?'Carga tu catálogo desde Excel.':'')+'</div>'; return; }
-    el.innerHTML=`<table><thead><tr><th>Clave</th><th>Nombre</th><th>Categoría</th><th>Unidad</th><th class="n">Factor kg</th><th>Estado</th><th>Alta</th>${M?'<th></th>':''}</tr></thead><tbody>
+    el.innerHTML=`<table><thead><tr><th>Clave</th><th>Nombre</th><th>Categoría</th><th>Unidad</th><th class="n">Factor kg</th><th>Estado</th><th>Alta</th>${M||C?'<th></th>':''}</tr></thead><tbody>
     ${P.map(p=>`<tr><td>${esc(p.clave)}</td><td><b>${esc(p.nombre)}</b></td><td>${esc(p.categoria)}</td><td>${esc(p.unidad||'kg')}</td><td class="n">${p.unidad&&p.unidad!=='kg'?fmt(p.factorKg,4):'—'}</td>
-      <td>${p.estado==='aprobado'?'<span class="pill p-ok">Autorizado</span>':p.estado==='pendiente'?'<span class="pill p-warn">⏳ Pend. autorización</span>':'<span class="pill p-bad">Rechazado</span>'}</td>
-      <td class="hint">${esc(p.creadoPor||'')}<br>${fD(p.ts)}</td>
-      ${M?`<td style="white-space:nowrap">${p.estado==='pendiente'?`<button class="b-sm b-ok" onclick="autProd('${p.id}','aprobado')">Autorizar</button> <button class="b-sm b-bad" onclick="autProd('${p.id}','rechazado')">Rechazar</button> `:''}<button class="b-sm b-ghost" onclick="formProducto('${p.id}')">Editar</button> <button class="b-sm b-ghost" onclick="borrarProd('${p.id}')">🗑️</button></td>`:''}</tr>`).join('')}</tbody></table>`;
+      <td>${p.estado==='aprobado'?'<span class="pill p-ok">Activo</span>':p.estado==='pendiente'?'<span class="pill p-warn">⏳ Pend. autorización</span>':'<span class="pill p-bad">Rechazado</span>'}</td>
+      <td class="hint">${esc(p.creadoPor||'')}<br>${fD(p.ts)}${p.modificadoPor?'<br>Mod.: '+esc(p.modificadoPor)+' · '+fD(p.tsMod):''}</td>
+      ${M?`<td style="white-space:nowrap">${p.estado==='pendiente'?`<button class="b-sm b-ok" onclick="autProd('${p.id}','aprobado')">Autorizar</button> <button class="b-sm b-bad" onclick="autProd('${p.id}','rechazado')">Rechazar</button> `:''}<button class="b-sm b-ghost" onclick="formProducto('${p.id}')">Editar</button> <button class="b-sm b-ghost" onclick="borrarProd('${p.id}')">🗑️</button></td>`:C?`<td><button class="b-sm b-ghost" onclick="formProducto('${p.id}')">Editar</button></td>`:''}</tr>`).join('')}</tbody></table>`;
   }
 };
 function formProducto(pid,volverA){
@@ -822,7 +826,7 @@ function formProducto(pid,volverA){
   <div><label class="req">Unidad de pago</label><select id="npU">${UNITS.map(u=>`<option ${u===(p.unidad||'kg')?'selected':''}>${u}</option>`).join('')}</select></div>
   <div><label>Factor kg por unidad</label><input id="npF" inputmode="decimal" value="${p.factorKg||''}" placeholder="Ej. diésel ≈ 0.84"></div></div>
   <p class="hint">El factor convierte el peso neto de báscula (kg) a la unidad en que se paga. No aplica para kg; ton usa 1000 automáticamente.</p>
-  ${ME.rol!=='master'?'<p class="hint">⏳ Quedará pendiente de autorización del master.</p>':''}
+  <p class="hint">📝 Quedará registrado en la bitácora del catálogo con tu usuario.</p>
   <div class="acts"><button class="b-ghost" onclick="${volverA?`formCompras('${volverA}')`:'closeModal()'}">Cancelar</button><button class="b-pri" onclick="guardarProducto('${pid||''}','${volverA||''}')">Guardar</button></div>`);
 }
 async function guardarProducto(pid,volverA){
@@ -833,21 +837,25 @@ async function guardarProducto(pid,volverA){
   const u=$('#npU').value, f=num($('#npF').value);
   if(u!=='kg'&&u!=='ton'&&!f) return alert('Para '+u+' indica el factor kg por unidad (ej. densidad).');
   const data={clave,nombre,categoria:$('#npCat').value,unidad:u,factorKg:u==='ton'?1000:(u==='kg'?1:f)};
-  if(pid){ await DB.update('productos/'+pid,data); }
-  else { const id=genId(); await DB.set('productos/'+id,{...data,estado:ME.rol==='master'?'aprobado':'pendiente',creadoPor:ME.nombre,rol:ME.rol,ts:Date.now()});
-    if(ME.rol!=='master') toast('✋ Producto enviado al master para autorización.'); }
+  const desc=p=>[p.clave,p.nombre,p.categoria,p.unidad,(p.unidad!=='kg'?'factor '+p.factorKg:'')].filter(Boolean).join(' · ');
+  if(pid){ const antes=prod(pid); await DB.update('productos/'+pid,{...data,modificadoPor:ME.nombre,tsMod:Date.now()});
+    await logCat('Modificó producto','Antes: '+desc(antes)+' → Ahora: '+desc(data)); toast('✅ Producto actualizado'); }
+  else { const id=genId(); await DB.set('productos/'+id,{...data,estado:'aprobado',creadoPor:ME.nombre,rol:ME.rol,ts:Date.now()});
+    await logCat('Alta de producto',desc(data)); toast('✅ Producto dado de alta'); }
   if(volverA) setTimeout(()=>formCompras(volverA),250); else closeModal();
 }
+async function logCat(accion,detalle){ try{ await DB.set('catalogoLog/'+genId(),{ts:Date.now(),usuario:ME.nombre,rol:ME.rol,accion,detalle:detalle||''}); }catch(e){ console.error(e); } }
 async function autProd(id,est){ await DB.update('productos/'+id,{estado:est,autorizo:ME.nombre,tsAut:Date.now()}); toast(est==='aprobado'?'✅ Producto autorizado':'Producto rechazado'); }
 async function borrarProd(id){
   const usado=entradasAll().some(e=>e.bas&&e.bas.productoId===id);
   if(usado) return alert('Este producto ya tiene entradas registradas; no se puede borrar. Puedes renombrarlo o marcarlo como rechazado.');
-  if(confirm('¿Borrar el producto?')) await DB.remove('productos/'+id);
+  const p=prod(id);
+  if(confirm('¿Borrar el producto?')){ await DB.remove('productos/'+id); await logCat('Borró producto',(p.clave?p.clave+' · ':'')+p.nombre); }
 }
 function normH(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,''); }
 function leerExcel(file){
   if(!file) return; if(!window.XLSX) return alert('No se cargó la librería de Excel (revisa internet).');
-  const rd=new FileReader();
+  window._impFile=file.name; const rd=new FileReader();
   rd.onload=ev=>{
     const wb=XLSX.read(ev.target.result,{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]];
     const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
@@ -865,14 +873,16 @@ function leerExcel(file){
   rd.readAsArrayBuffer(file); $('#xlsIn').value='';
 }
 async function importarProductos(){
-  const upd={}; let n=0;
+  const upd={}; let n=0, nNew=0, nUpd=0;
   window._imp.forEach(o=>{
     const ex=productos().find(p=>(o.clave&&p.clave===o.clave)||p.nombre.toLowerCase()===o.nombre.toLowerCase());
     const f=o.unidad==='kg'?1:o.unidad==='ton'?1000:(o.factorKg||1);
-    if(ex){ upd[ex.id+'/clave']=o.clave||ex.clave||''; upd[ex.id+'/nombre']=o.nombre; upd[ex.id+'/categoria']=o.categoria; upd[ex.id+'/unidad']=o.unidad; upd[ex.id+'/factorKg']=f; }
-    else upd[genId()+String(n++)]={clave:o.clave,nombre:o.nombre,categoria:o.categoria,unidad:o.unidad,factorKg:f,estado:'aprobado',creadoPor:ME.nombre+' (Excel)',rol:'master',ts:Date.now()};
+    if(ex){ nUpd++; upd[ex.id+'/modificadoPor']=ME.nombre+' (Excel)'; upd[ex.id+'/tsMod']=Date.now(); upd[ex.id+'/clave']=o.clave||ex.clave||''; upd[ex.id+'/nombre']=o.nombre; upd[ex.id+'/categoria']=o.categoria; upd[ex.id+'/unidad']=o.unidad; upd[ex.id+'/factorKg']=f; }
+    else { nNew++; upd[genId()+String(n++)]={clave:o.clave,nombre:o.nombre,categoria:o.categoria,unidad:o.unidad,factorKg:f,estado:'aprobado',creadoPor:ME.nombre+' (Excel)',rol:ME.rol,ts:Date.now()}; }
   });
-  await DB.update('productos',upd); closeModal(); toast('✅ Catálogo importado ('+window._imp.length+' productos).');
+  await DB.update('productos',upd);
+  await logCat('Carga de catálogo desde Excel',(window._impFile||'archivo')+': '+nNew+' altas, '+nUpd+' actualizados · '+window._imp.map(o=>o.clave||o.nombre).slice(0,60).join(', ')+(window._imp.length>60?'…':''));
+  closeModal(); toast('✅ Catálogo importado ('+window._imp.length+' productos).');
 }
 function plantillaExcel(){
   if(!window.XLSX) return alert('No se cargó la librería de Excel.');
