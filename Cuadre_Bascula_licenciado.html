@@ -733,35 +733,42 @@ async function marcarCalidad(id,est){
 
 /* ---------- EDICIÓN BAJO AUTORIZACIÓN ---------- */
 const CAMPOS={
-  bas:[['folioPesaje','Folio de pesaje','t'],['proveedor','Proveedor','t'],['bruto','Bruto kg','n'],['tara','Tara kg','n'],['neto','Neto kg','n'],['cantidad','Cantidad (unidad del producto)','n'],['placas','Placas','t'],['chofer','Chofer','t'],['obs','Observaciones','t']],
-  com:[['factura','Factura','t'],['proveedor','Proveedor factura','t'],['cantidad','Cantidad factura','n'],['importe','Importe $','n'],['justificacion','Justificación','t'],['obs','Observaciones','t']],
+  bas:[['productoId','Producto / material','p'],['folioPesaje','Folio de pesaje','t'],['proveedor','Proveedor','t'],['bruto','Bruto kg','n'],['tara','Tara kg','n'],['neto','Neto kg','n'],['cantidad','Cantidad (unidad del producto)','n'],['placas','Placas','t'],['chofer','Chofer','t'],['obs','Observaciones','t']],
+  com:[['productoId','Producto / material','p'],['factura','Factura','t'],['proveedor','Proveedor factura','t'],['cantidad','Cantidad factura','n'],['importe','Importe $','n'],['justificacion','Justificación','t'],['obs','Observaciones','t']],
   inv:[['cantidad','Cantidad inventario','n'],['obs','Observaciones','t']],
   cal:[['estado','Dictamen (liberado / rechazado)','t'],['obs','Observaciones','t']]
 };
 const SECN={bas:'Báscula',com:'Compras',inv:'Inventarios',cal:'Calidad'};
 function formEdicion(id,s){
-  const e=entradasAll().find(x=>x.id===id); const cur=e[s]||{}; const M=ME.rol==='master';
+  const e=entradasAll().find(x=>x.id===id); const cur=Object.assign({},e[s]||{},{productoId:(e.bas&&e.bas.productoId)||''}); const M=ME.rol==='master';
   openModal(`<h2>✏️ ${M?'Editar':'Solicitar edición'} · ${SECN[s]} · ${esc(e.folio)}</h2>
   <p class="hint">${M?'Como master el cambio se aplica de inmediato y queda en el historial.':'El cambio se enviará al master para su autorización. Mientras tanto, el registro conserva los valores actuales.'}</p>
-  <div class="grid2">${CAMPOS[s].map(([k,l,t])=>`<div><label>${l}</label>${t==='n'?`<input data-k="${k}" data-t="n" inputmode="decimal" value="${cur[k]==null?'':cur[k]}">`:`<input data-k="${k}" data-t="t" value="${esc(cur[k]||'')}">`}</div>`).join('')}</div>
+  <div class="grid2">${CAMPOS[s].map(([k,l,t])=>`<div ${t==='p'?'style="grid-column:1/-1"':''}><label>${l}</label>${t==='p'?`<select data-k="${k}" data-t="p">${prodOptions(cur[k])}</select>${!cur[k]&&e.bas&&e.bas.productoTexto?`<div class="hint">Registrado como no catalogado: “${esc(e.bas.productoTexto)}”</div>`:''}`:t==='n'?`<input data-k="${k}" data-t="n" inputmode="decimal" value="${cur[k]==null?'':cur[k]}">`:`<input data-k="${k}" data-t="t" value="${esc(cur[k]||'')}">`}</div>`).join('')}</div>
   <label class="req">Motivo del cambio</label><textarea id="edMot"></textarea>
   <div class="acts"><button class="b-ghost" onclick="detalle('${id}')">Cancelar</button><button class="b-pri" onclick="enviarEdicion('${id}','${s}')">${M?'Aplicar cambio':'Enviar solicitud al master'}</button></div>`);
 }
 async function enviarEdicion(id,s){
-  const e=entradasAll().find(x=>x.id===id); const cur=e[s]||{}; const mot=$('#edMot').value.trim();
+  const e=entradasAll().find(x=>x.id===id); const cur=Object.assign({},e[s]||{},{productoId:(e.bas&&e.bas.productoId)||''}); const mot=$('#edMot').value.trim();
   if(!mot) return alert('Escribe el motivo.');
   const antes={}, despues={};
   $$('.modal [data-k]').forEach(i=>{ const k=i.dataset.k; const v=i.dataset.t==='n'?num(i.value):i.value.trim(); const o=cur[k]==null?(i.dataset.t==='n'?null:''):cur[k]; if(String(v)!==String(o)){ antes[k]=o; despues[k]=v; } });
   if(s==='cal' && despues.estado && !['liberado','rechazado'].includes(despues.estado)) return alert('El dictamen debe ser "liberado" o "rechazado".');
+  if('productoId' in despues && !despues.productoId) return alert('Selecciona el producto correcto.');
   if(!Object.keys(despues).length) return alert('No cambiaste ningún valor.');
   if(ME.rol==='master'){ await aplicarEdicion(id,s,despues,mot,ME.nombre); toast('✅ Cambio aplicado.'); setTimeout(()=>detalle(id),250); return; }
   await DB.set('solicitudes/'+genId(),{tipo:'edicion',entradaId:id,folio:e.folio,seccion:s,antes,despues,motivo:mot,usuario:ME.nombre,rol:ME.rol,ts:Date.now(),estado:'pendiente'});
   toast('✋ Solicitud enviada al master.'); setTimeout(()=>detalle(id),250);
 }
+function valTxt(k,v){ if(k==='productoId'){ const p=prod(v); return p?((p.clave?'['+p.clave+'] ':'')+p.nombre):(v?'(producto borrado)':'(no catalogado)'); } return v==null?'':v; }
 async function aplicarEdicion(id,s,despues,mot,quien){
-  const upd={}; Object.entries(despues).forEach(([k,v])=>upd[s+'/'+k]=v);
+  const e=entradasAll().find(x=>x.id===id); const upd={};
+  Object.entries(despues).forEach(([k,v])=>{ if(k!=='productoId') upd[s+'/'+k]=v; });
+  if(despues.productoId){ const p=prod(despues.productoId); const u=(p&&p.unidad)||'kg'; const f=u==='kg'?1:(u==='ton'?1000:(num(p&&p.factorKg)||1));
+    upd['bas/productoId']=despues.productoId; upd['bas/productoTexto']=''; upd['bas/unidad']=u;
+    const neto=s==='bas'&&despues.neto!=null?despues.neto:num(e.bas.neto);
+    if(!(s==='bas'&&'cantidad' in despues) && neto!=null) upd['bas/cantidad']=+(neto/f).toFixed(3); }
   await DB.update('entradas/'+id,upd);
-  await hist(id,'Edición '+SECN[s]+(quien!==ME.nombre?' solicitada por '+quien:''),Object.entries(despues).map(([k,v])=>k+' → '+v).join(' · ')+' · Motivo: '+mot);
+  await hist(id,'Edición '+SECN[s]+(quien!==ME.nombre?' solicitada por '+quien:''),Object.entries(despues).map(([k,v])=>(k==='productoId'?'producto':k)+' → '+valTxt(k,v)).join(' · ')+' · Motivo: '+mot);
 }
 async function eliminar(id){
   const m=prompt('Motivo de la eliminación (queda registrado; el master puede restaurarla):',''); if(!m||!m.trim()) return;
@@ -904,7 +911,7 @@ const ViewSol = {
     <div class="card"><h2>✏️ Solicitudes de edición (${pend.length} pendientes)</h2>
     ${S.length?`<table><thead><tr><th>Fecha</th><th>Entrada</th><th>Área</th><th>Cambio solicitado</th><th>Motivo</th><th>Solicitó</th><th>Estado</th></tr></thead><tbody>
     ${S.slice(0,200).map(s=>`<tr><td>${fDT(s.ts)}</td><td><a href="#" onclick="detalle('${s.entradaId}');return false">${esc(s.folio)}</a></td><td>${SECN[s.seccion]}</td>
-      <td>${Object.keys(s.despues||{}).map(k=>`<div><b>${k}:</b> <s style="color:var(--muted)">${esc(s.antes&&s.antes[k])}</s> → <b>${esc(s.despues[k])}</b></div>`).join('')}</td>
+      <td>${Object.keys(s.despues||{}).map(k=>`<div><b>${k==='productoId'?'producto':k}:</b> <s style="color:var(--muted)">${esc(valTxt(k,s.antes&&s.antes[k]))}</s> → <b>${esc(valTxt(k,s.despues[k]))}</b></div>`).join('')}</td>
       <td>${esc(s.motivo)}</td><td>${esc(s.usuario)}</td>
       <td>${s.estado==='pendiente'?`<button class="b-sm b-ok" onclick="resolverSol('${s.id}',true)">Autorizar</button> <button class="b-sm b-bad" onclick="resolverSol('${s.id}',false)">Rechazar</button>`:`<span class="pill ${s.estado==='autorizada'?'p-ok':'p-bad'}">${s.estado}</span><br><small>${esc(s.resolvio||'')}</small>`}</td></tr>`).join('')}</tbody></table>`:'<div class="hint">Sin solicitudes.</div>'}</div>`;
   }
