@@ -1088,6 +1088,7 @@ const ViewDash = {
       if(e.com){ r.nc++; r.c+=qC(e)||0; }
       if(e.inv){ r.ni++; r.i+=qI(e)||0; if(!e.cal) r.pq++; else if(e.cal.estado==='rechazado') r.rq++; } });
     const rows=Object.values(g).sort((a,b)=>(a.clave||'~'+a.nombre).localeCompare(b.clave||'~'+b.nombre));
+    this._rows=rows; const META=OD._meta||null;
     const f2=n=>Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
     const tot=rows.reduce((t,r)=>{['nb','b','nc','c','ni','i'].forEach(k=>t[k]+=r[k]); return t;},{nb:0,b:0,nc:0,c:0,ni:0,i:0});
     const odV=r=>OD[r.k]?num(OD[r.k].cant):null;
@@ -1095,7 +1096,9 @@ const ViewDash = {
     const difTxt=(a,b)=>{ if(b==null) return '<span class="hint">—</span>'; const d=a-b; return Math.abs(d)<0.005?'<span class="pill p-ok">✅ Cuadra</span>':`<span class="dif-bad">${d>0?'+':''}${f2(d)}</span>`; };
     const perTxt=per==='*'?'Todos los periodos':pLabel(per).toLowerCase();
     el.innerHTML=`<div class="row" style="align-items:flex-start"><div><h2 style="font-size:18px">📦 Entró a inventario · ${perTxt} (${tot.ni})</h2>
-      <div class="hint">Mismo formato que Odoo: <b>[clave] producto (número de entradas)</b> y cantidad. Total sumado igual que Odoo (todas las unidades).${tot.ni<tot.nb?' Quedan <b>'+(tot.nb-tot.ni)+'</b> entradas de báscula sin afectar en inventario.':''}</div></div>
+      <div class="hint">Mismo formato que Odoo: <b>[clave] producto (número de entradas)</b> y cantidad. Total sumado igual que Odoo (todas las unidades).${tot.ni<tot.nb?' Quedan <b>'+(tot.nb-tot.ni)+'</b> entradas de báscula sin afectar en inventario.':''}</div>
+      ${canOdoo?`<div class="row" style="margin-top:8px;align-items:center"><div class="fit"><button class="b-pri b-sm" onclick="$('#odooIn').click()">📥 Cargar reporte de Odoo</button><input type="file" id="odooIn" accept=".xlsx,.xls,.csv" style="display:none" onchange="leerOdoo(this.files[0])"></div>
+        <div class="hint">${META?'Última carga: <b>'+esc(META.archivo)+'</b> · '+esc(META.usuario)+' · '+fDT(META.ts)+' · '+META.movs+' movimientos de '+pLabel(per):'Exporta de Odoo los movimientos de stock (Excel) y súbelo aquí: las cifras de Odoo se llenan solas.'}</div></div>`:(META?`<div class="hint" style="margin-top:6px">Cifras de Odoo cargadas de <b>${esc(META.archivo)}</b> · ${esc(META.usuario)} · ${fDT(META.ts)}</div>`:'')}</div>
       <div class="fit" style="text-align:right"><div class="hint" style="text-transform:uppercase;font-weight:700">Total inventario</div><div style="font-size:34px;font-weight:800;color:#0e7a52;font-variant-numeric:tabular-nums">${f2(tot.i)}</div>
       ${hasOd?`<div class="hint">Odoo: <b>${f2(totOd)}</b> · Dif.: ${difTxt(tot.i,totOd)}</div>`:''}</div></div>
     <div class="kpis" style="margin:12px 0 10px">
@@ -1110,6 +1113,10 @@ const ViewDash = {
         <td class="n" style="background:#f2fbf7;font-size:16px;font-weight:800;color:#0e7a52">${f2(r.i)}</td>
         ${per!=='*'?`<td class="n">${canOdoo?`<input data-odoo="${r.k}" inputmode="decimal" style="width:130px;text-align:right" value="${odV(r)==null?'':odV(r)}" placeholder="Cifra Odoo">`:(odV(r)==null?'—':f2(odV(r)))}</td><td class="n">${difTxt(r.i,odV(r))}</td>`:''}</tr>`).join('')}</tbody>
       <tfoot><tr style="font-size:16px"><td>TOTAL ${perTxt.toUpperCase()} (${tot.ni})</td><td class="n">${f2(tot.b)}</td><td class="n">${f2(tot.c)}</td><td class="n" style="font-size:19px;color:#0e7a52">${f2(tot.i)}</td>${per!=='*'?`<td class="n">${hasOd?f2(totOd):'—'}</td><td class="n">${hasOd?difTxt(tot.i,totOd)+parTxt:''}</td>`:''}</tr></tfoot></table></div>`:'<div class="empty">Sin entradas en este periodo.</div>'}
+    ${META&&META.extra&&META.extra.length?`<div class="sec" style="background:var(--warnbg);margin-top:12px"><h4>⚠️ Entró en Odoo en ${pLabel(per).toLowerCase()} pero no tiene registro en báscula (${META.extra.length})</h4>
+      <table><thead><tr><th>Producto en Odoo</th><th class="n">Movs.</th><th class="n">Cantidad</th><th>Unidad</th></tr></thead><tbody>${META.extra.map(x=>`<tr><td><b>${x.clave?'['+esc(x.clave)+'] ':''}${esc(x.nombre)}</b></td><td class="n">${x.n}</td><td class="n">${f2(x.cant)}</td><td>${esc(x.u||'')}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td>Total</td><td class="n">${META.extra.reduce((a,x)=>a+x.n,0)}</td><td class="n">${f2(META.extra.reduce((a,x)=>a+x.cant,0))}</td><td></td></tr></tfoot></table>
+      <div class="hint" style="margin-top:6px">Puede tratarse de material que no pasa por báscula (refacciones, servicios) o de una entrada que falta registrar. Si la clave coincide con un producto del catálogo, se compara automáticamente.</div></div>`:''}
     ${canOdoo&&rows.length?'<p class="hint" style="margin-top:8px">Escribe la cantidad que muestra Odoo para cada producto y presiona Enter o cambia de casilla; se guarda para el periodo y queda registro de quién la capturó.</p>':''}`;
     $$('#dInv [data-odoo]').forEach(inp=>{
       const save=async()=>{ const k=inp.dataset.odoo, v=num(inp.value), cur=OD[k]?num(OD[k].cant):null; if(v===cur) return;
@@ -1157,6 +1164,71 @@ async function imagenCuadre(){
     toast('📸 Imagen del cuadre descargada');
   }catch(err){ alert('No se pudo generar la imagen: '+err.message); }
   finally{ rep.style.left='-99999px'; rep.innerHTML=''; }
+}
+</script>
+
+<script>
+/* =====================================================================
+   CARGA DEL REPORTE DE ODOO (stock.move.line exportado a Excel)
+   ===================================================================== */
+function leerOdoo(file){
+  if(!file) return; if(!window.XLSX) return alert('No se cargó la librería de Excel (revisa internet).');
+  const per=ViewDash.per; if(!per||per==='*') return alert('Primero elige en el filtro el periodo (mes) a comparar.');
+  const rd=new FileReader();
+  rd.onload=ev=>{
+    let wb; try{ wb=XLSX.read(ev.target.result,{type:'array',cellDates:true}); }catch(e){ return alert('No pude leer el archivo: '+e.message); }
+    const ws=wb.Sheets[wb.SheetNames[0]]; const A=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
+    const hi=A.findIndex(r=>r&&r.some(c=>normH(c)==='producto')&&r.some(c=>normH(c).startsWith('cantidad')));
+    if(hi<0) return alert('No encontré las columnas "Producto" y "Cantidad". Exporta desde Odoo: Inventario › Reportes › Movimientos (stock.move.line).');
+    const H=A[hi].map(normH); const ix=n=>H.indexOf(n);
+    const iF=ix('fecha'), iP=ix('producto'), iD=ix('desde'), iA=ix('a'), iU=ix('unidad'), iE=ix('estado'), iR=ix('referencia');
+    const iQ=ix('cantidadreal')>=0?ix('cantidadreal'):ix('cantidad');
+    const toDate=v=>{ if(v instanceof Date) return v; if(typeof v==='number') return new Date(Math.round((v-25569)*86400000)); if(typeof v==='string'){ const m=v.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/)||null; if(m) return new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5]); const m2=v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); if(m2) return new Date(+m2[3],m2[2]-1,+m2[1]); } return null; };
+    const movs=[];
+    A.slice(hi+1).forEach(r=>{ if(!r) return; const d=toDate(r[iF]); if(!d||isNaN(d)) return; const prodTxt=String(r[iP]||'').trim(); if(!prodTxt) return;
+      const m=prodTxt.match(/^\[([^\]]+)\]\s*(.*)$/); movs.push({d,clave:m?m[1].trim():'',nombre:m?m[2].trim():prodTxt,desde:iD>=0?String(r[iD]||''):'',a:iA>=0?String(r[iA]||''):'',u:iU>=0?String(r[iU]||''):'',est:iE>=0?String(r[iE]||''):'',ref:iR>=0?String(r[iR]||''):'',q:num(r[iQ])||0}); });
+    if(!movs.length) return alert('El archivo no trae movimientos con fecha.');
+    window._odoo={file:file.name,per,movs};
+    pintarOdooPreview();
+  };
+  rd.readAsArrayBuffer(file); $('#odooIn').value='';
+}
+function filtrarOdoo(){
+  const O=window._odoo, soloProv=$('#odProv')?$('#odProv').checked:true, soloHecho=$('#odHecho')?$('#odHecho').checked:true;
+  return O.movs.filter(m=>ym(m.d.getTime())===O.per && (!soloProv||/vendor|proveedor/i.test(m.desde)) && (!soloHecho||!m.est||/hecho|done/i.test(m.est)));
+}
+function pintarOdooPreview(){
+  const O=window._odoo; const M=filtrarOdoo();
+  const rows=ViewDash._rows||[]; const P=productos();
+  const nrm=s=>String(s||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9]/g,'');
+  const agg={}; M.forEach(m=>{ const k=m.clave?('C:'+nrm(m.clave)):('N:'+nrm(m.nombre)); const a=agg[k]=agg[k]||{clave:m.clave,nombre:m.nombre,u:m.u,cant:0,n:0}; a.cant+=m.q; a.n++; });
+  const match={}, usado=new Set();
+  rows.forEach(r=>{ const p=prod(r.k); const kc=r.clave?('C:'+nrm(r.clave)):null; const kn='N:'+nrm(p?p.nombre:r.nombre);
+    let hit=kc&&agg[kc]?kc:null;
+    if(!hit){ hit=Object.keys(agg).find(k=>!usado.has(k)&&nrm(agg[k].nombre)===nrm(p?p.nombre:r.nombre))||null; }
+    if(hit){ usado.add(hit); match[r.k]={cant:agg[hit].cant,n:agg[hit].n,odoo:(agg[hit].clave?'['+agg[hit].clave+'] ':'')+agg[hit].nombre}; } });
+  const extra=Object.keys(agg).filter(k=>!usado.has(k)).map(k=>agg[k]).sort((a,b)=>b.cant-a.cant);
+  window._odooRes={match,extra,movs:M.length};
+  const f2=n=>Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const tot=Object.values(agg).reduce((s,a)=>s+a.cant,0);
+  openModal(`<h2>📥 Reporte de Odoo · ${pLabel(O.per)}</h2>
+    <p class="hint">Archivo <b>${esc(O.file)}</b>: ${O.movs.length} movimientos en total; <b>${M.length}</b> de ${pLabel(O.per).toLowerCase()} con los filtros. Total Odoo: <b>${f2(tot)}</b>.</p>
+    <div class="row"><label class="fit" style="text-transform:none;font-size:13px;color:var(--txt)"><input type="checkbox" id="odProv" ${$('#odProv')&&!$('#odProv').checked?'':'checked'} style="width:auto" onchange="pintarOdooPreview()"> Solo recepciones de proveedores (Desde = Vendors)</label>
+    <label class="fit" style="text-transform:none;font-size:13px;color:var(--txt)"><input type="checkbox" id="odHecho" checked style="width:auto" onchange="pintarOdooPreview()"> Solo movimientos en estado Hecho</label>
+    <label class="fit" style="text-transform:none;font-size:13px;color:var(--txt)"><input type="checkbox" id="odCero" checked style="width:auto"> Poner 0 a productos de báscula que no aparecen en Odoo</label></div>
+    <h3>Productos de báscula (${rows.length})</h3>
+    <div class="tw" style="max-height:300px"><table><thead><tr><th>Producto (báscula)</th><th>Coincide en Odoo con</th><th class="n">Movs.</th><th class="n">Inventarios</th><th class="n">Odoo</th><th class="n">Dif.</th></tr></thead><tbody>
+    ${rows.map(r=>{ const m=match[r.k]; const od=m?m.cant:0; const d=r.i-od; return `<tr><td><b>${r.clave?'['+esc(r.clave)+'] ':''}${esc(r.nombre)}</b></td><td>${m?esc(m.odoo):'<span class="pill p-warn">Sin movimientos en Odoo</span>'}</td><td class="n">${m?m.n:0}</td><td class="n">${f2(r.i)}</td><td class="n">${f2(od)}</td><td class="n">${Math.abs(d)<0.005?'<span class="pill p-ok">✅</span>':'<span class="dif-bad">'+f2(d)+'</span>'}</td></tr>`; }).join('')}</tbody></table></div>
+    ${extra.length?`<h3>En Odoo sin registro en báscula (${extra.length})</h3><div class="tw" style="max-height:220px"><table><tbody>${extra.map(x=>`<tr><td>${x.clave?'['+esc(x.clave)+'] ':''}${esc(x.nombre)}</td><td class="n">${x.n} movs.</td><td class="n">${f2(x.cant)} ${esc(x.u)}</td></tr>`).join('')}</tbody></table></div>`:''}
+    <div class="acts"><button class="b-ghost" onclick="closeModal()">Cancelar</button><button class="b-pri" onclick="aplicarOdoo()">Llenar cifras de Odoo</button></div>`,true);
+}
+async function aplicarOdoo(){
+  const O=window._odoo, R=window._odooRes, cero=$('#odCero').checked, ts=Date.now();
+  const upd={};
+  (ViewDash._rows||[]).forEach(r=>{ const m=R.match[r.k]; if(m) upd[r.k]={cant:+m.cant.toFixed(4),usuario:ME.nombre,ts,fuente:'Odoo · '+O.file,movs:m.n}; else if(cero) upd[r.k]={cant:0,usuario:ME.nombre,ts,fuente:'Odoo · '+O.file+' (sin movimientos)',movs:0}; });
+  upd._meta={archivo:O.file,usuario:ME.nombre,ts,movs:R.movs,extra:R.extra.slice(0,80).map(x=>({clave:x.clave||'',nombre:x.nombre,cant:+x.cant.toFixed(4),n:x.n,u:x.u||''}))};
+  await DB.update('odoo/'+O.per,upd);
+  closeModal(); toast('✅ Cifras de Odoo cargadas para '+pLabel(O.per)+' ('+Object.keys(upd).length+' renglones).');
 }
 </script>
 <script>
