@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cuadre de Báscula · 19 Hermanos</title>
+<script src="https://barbagomezricardo-cloud.github.io/embarques/acceso-19h.js"></script>
+<script>/* Acceso 19H: entra con tu usuario (master, superusuario o báscula del programador); la base ya no responde sin sesión */
+if(!/[?&]demo=1/.test(location.search)) Acceso19H.puerta({app:"basc",titulo:"Cuadre de báscula",recaptcha:"6Lf4vtQtAAAAABsSvrf7bax_PgYQX1TrT3j6Rmuj"});</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -185,7 +188,7 @@ const pinHash = (uid,pin)=>sha256('cb19h|'+uid+'|'+pin);
    ===================================================================== */
 const DB = {
   tree:{}, onChange:null, es:null, ready:false,
-  url(path){ return FB_URL+'/'+ROOT+(path?'/'+path:'')+'.json'; },
+  url(path){ const t=window.Acceso19H&&Acceso19H.tokenGuardado(); return FB_URL+'/'+ROOT+(path?'/'+path:'')+'.json'+(t?'?auth='+encodeURIComponent(t):''); },
   _apply(path,data){
     const ks=path.split('/').filter(Boolean);
     if(!ks.length){ this.tree = data||{}; return; }
@@ -203,6 +206,7 @@ const DB = {
       else if(method==='DELETE') this._apply(path,null);
       this._changed(); return clone;
     }
+    await Acceso19H.esperarSesion(); await Acceso19H.token();   // Acceso 19H
     const r=await fetch(this.url(path),{method,body:body===undefined?undefined:JSON.stringify(body)});
     if(r.status===401||r.status===403){ Lic.blocked('La base rechazó la operación (licencia apagada o vencida).'); throw new Error('Permiso denegado'); }
     if(!r.ok) throw new Error('Error '+r.status+' al guardar');
@@ -213,6 +217,9 @@ const DB = {
   remove(path){ return this._req('DELETE',path); },
   start(){
     if(DEMO){ this.ready=true; this._changed(); return; }
+    if(!this._tokOk){ Acceso19H.esperarSesion().then(()=>Acceso19H.token()).then(()=>{ this._tokOk=true; this.start();
+      setInterval(()=>{ Acceso19H.token().then(()=>this.start()); }, 45*60000); });   // el token dura 1 h: se renueva y se reconecta
+      return; }
     if(this.es) this.es.close();
     const es=new EventSource(this.url(''));
     this.es=es;
