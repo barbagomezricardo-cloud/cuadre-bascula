@@ -369,8 +369,21 @@ async function boot(){
   setTimeout(()=>{ if(!DB.ready) lockScreen('📡','Conectando a la base…','Si tarda demasiado, revisa tu internet.','<button class="b-pri" onclick="location.reload()">Reintentar</button>'); },6000);
 }
 
+/* Acceso 19H: tu usuario único decide tu rol aquí (master, báscula, compras o inventarios); ya no hay PIN aparte */
+function meAcceso(){
+  const ap=window.Acceso19H&&Acceso19H.perfil(); if(!ap||ap.activo!==true) return null;
+  const rol=ap.master===true?'master':ap.cb; if(!ROLES[rol]) return null;
+  return {id:'acc_'+(ap.key||'x'), nombre:ap.nombre, rol, activo:true, acceso:true};
+}
 function onData(){
   if(!Lic.ok) return;
+  if(!DEMO){
+    const a=meAcceso();
+    if(!a){ lockScreen('🔒','Sin acceso','Tu usuario no tiene rol en Cuadre de báscula. Pide al master que te lo asigne.','<button class="b-pri" onclick="Acceso19H.salir().then(()=>location.reload())">Entrar con otro usuario</button>'); return; }
+    const nuevo=!ME||ME.rol!==a.rol; ME=a;
+    if(nuevo) renderShell(); else { refreshAlerts(); if(VIEW&&VIEW.update) VIEW.update(); }
+    return;
+  }
   if(!ME){
     const sid=lsGet(SKEY); const u=sid&&T().usuarios&&T().usuarios[sid];
     if(u && u.activo!==false){ ME={id:sid,...u}; renderShell(); return; }
@@ -420,11 +433,11 @@ function login(){
   if(!u||u.pin!==pinHash(id,p)){ alert('PIN incorrecto.'); return; }
   lsSet(SKEY,id); ME={id,...u}; unlockAudio(); askNotif(); renderShell();
 }
-function logout(){ lsSet(SKEY,null); ME=null; VIEW=null; TAB=null; document.title=APP_NAME; renderLogin(); }
+function logout(){ if(!DEMO){ Acceso19H.salir().then(()=>location.reload()); return; } lsSet(SKEY,null); ME=null; VIEW=null; TAB=null; document.title=APP_NAME; renderLogin(); }
 
 function tabsFor(rol){
   const t=[['dash','📊 Dashboard'],['ent','📋 Entradas'],['prod','🏷️ Productos'],['cierre','🗓️ Cierre de mes']];
-  if(rol==='master') t.push(['sol','✋ Solicitudes'],['ia','🤖 Asistente IA'],['usr','👥 Usuarios'],['cfg','⚙️ Configuración']);
+  if(rol==='master') t.push(['sol','✋ Solicitudes'],['ia','🤖 Asistente IA'],...(DEMO?[['usr','👥 Usuarios']]:[]),['cfg','⚙️ Configuración']);   // Acceso 19H: los usuarios se manejan en el Panel de Licencia
   return t;
 }
 function renderShell(){
